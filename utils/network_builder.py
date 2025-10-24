@@ -13,6 +13,9 @@ def build_network_data(papers: List[Dict]) -> Dict:
     Returns:
         3D可視化用のデータ辞書
     """
+    if not papers:
+        return _empty_network_data()
+    
     n_papers = len(papers)
     
     # 論文の位置を円形に配置
@@ -26,8 +29,12 @@ def build_network_data(papers: List[Dict]) -> Dict:
     # 全論文からキーワードを収集
     all_keywords = Counter()
     for paper in papers:
-        for keyword, score in paper['keywords'][:10]:
-            all_keywords[keyword] += score
+        if 'keywords' in paper and paper['keywords']:
+            for keyword, score in paper['keywords'][:10]:
+                all_keywords[keyword] += score
+    
+    if not all_keywords:
+        return _empty_network_data()
     
     # 上位キーワードを選択
     top_keywords = [kw for kw, _ in all_keywords.most_common(15)]
@@ -45,11 +52,13 @@ def build_network_data(papers: List[Dict]) -> Dict:
     }
     
     # 類似度行列を計算
-    similarity_matrix = calculate_similarity(papers)
+    try:
+        similarity_matrix = calculate_similarity(papers)
+    except Exception as e:
+        print(f"[v0] Error calculating similarity: {e}")
+        similarity_matrix = np.eye(n_papers)
     
-    # エッジデータの構築
     edge_x, edge_y, edge_z = [], [], []
-    edge_colors, edge_widths = [], []
     
     # 論文間のエッジ（類似度が高い場合のみ）
     for i in range(n_papers):
@@ -61,30 +70,35 @@ def build_network_data(papers: List[Dict]) -> Dict:
                 edge_x.extend([x0, x1, None])
                 edge_y.extend([y0, y1, None])
                 edge_z.extend([z0, z1, None])
-                edge_widths.append(similarity * 5)
-                edge_colors.append(f'rgba(59, 130, 246, {similarity})')
     
-    # 論文とキーワード間のエッジ
+    # 論文とキーワード間のエッジ用の別データ
+    keyword_edge_x, keyword_edge_y, keyword_edge_z = [], [], []
+    
     for i, paper in enumerate(papers):
+        if 'keywords' not in paper or not paper['keywords']:
+            continue
+            
         paper_keywords = dict(paper['keywords'][:10])
         x0, y0, z0 = paper_positions[i]
         
         for keyword in top_keywords:
             if keyword in paper_keywords:
                 score = paper_keywords[keyword]
-                x1, y1, z1 = keyword_positions[keyword]
-                edge_x.extend([x0, x1, None])
-                edge_y.extend([y0, y1, None])
-                edge_z.extend([z0, z1, None])
-                edge_widths.append(score * 3)
-                edge_colors.append(f'rgba(16, 185, 129, {score * 0.7})')
+                if score > 0.3:  # 閾値を追加
+                    x1, y1, z1 = keyword_positions[keyword]
+                    keyword_edge_x.extend([x0, x1, None])
+                    keyword_edge_y.extend([y0, y1, None])
+                    keyword_edge_z.extend([z0, z1, None])
     
     # ノードデータの構築
     paper_x = [pos[0] for pos in paper_positions.values()]
     paper_y = [pos[1] for pos in paper_positions.values()]
     paper_z = [pos[2] for pos in paper_positions.values()]
     paper_labels = [f"P{i+1}" for i in range(n_papers)]
-    paper_hover = [f"<b>{p['name']}</b><br>キーワード数: {len(p['keywords'])}" for p in papers]
+    paper_hover = [
+        f"<b>{p.get('name', 'Unknown')}</b><br>キーワード数: {len(p.get('keywords', []))}" 
+        for p in papers
+    ]
     paper_ids = list(range(n_papers))
     
     keyword_x = [pos[0] for pos in keyword_positions.values()]
@@ -97,8 +111,9 @@ def build_network_data(papers: List[Dict]) -> Dict:
         'edge_x': edge_x,
         'edge_y': edge_y,
         'edge_z': edge_z,
-        'edge_colors': edge_colors,
-        'edge_widths': edge_widths,
+        'keyword_edge_x': keyword_edge_x,
+        'keyword_edge_y': keyword_edge_y,
+        'keyword_edge_z': keyword_edge_z,
         'paper_x': paper_x,
         'paper_y': paper_y,
         'paper_z': paper_z,
@@ -112,6 +127,17 @@ def build_network_data(papers: List[Dict]) -> Dict:
         'keyword_hover': keyword_hover
     }
 
+def _empty_network_data() -> Dict:
+    """空のネットワークデータを返す"""
+    return {
+        'edge_x': [], 'edge_y': [], 'edge_z': [],
+        'keyword_edge_x': [], 'keyword_edge_y': [], 'keyword_edge_z': [],
+        'paper_x': [], 'paper_y': [], 'paper_z': [],
+        'paper_labels': [], 'paper_hover': [], 'paper_ids': [],
+        'keyword_x': [], 'keyword_y': [], 'keyword_z': [],
+        'keyword_labels': [], 'keyword_hover': []
+    }
+
 def build_paper_detail_network(paper: Dict) -> Dict:
     """
     個別論文のキーワードネットワークを構築
@@ -122,7 +148,7 @@ def build_paper_detail_network(paper: Dict) -> Dict:
     Returns:
         3D可視化用のデータ辞書
     """
-    keywords = paper['keywords'][:15]
+    keywords = paper.get('keywords', [])[:15]
     n_keywords = len(keywords)
     
     if n_keywords == 0:
