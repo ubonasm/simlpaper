@@ -87,14 +87,11 @@ else:
         
         # 論文ノードの色と透明度を調整
         paper_colors = []
-        paper_opacities = []
         for paper_id in network_data['paper_ids']:
             if paper_id in selected_ids:
-                paper_colors.append('#3b82f6')
-                paper_opacities.append(1.0)
+                paper_colors.append('rgba(59, 130, 246, 1.0)')  # 選択された論文：青色、不透明
             else:
-                paper_colors.append('#94a3b8')
-                paper_opacities.append(0.2)
+                paper_colors.append('rgba(148, 163, 184, 0.2)')  # 選択されていない論文：グレー、半透明
         
         # 3D可視化
         fig = go.Figure(data=[
@@ -135,7 +132,6 @@ else:
                 marker=dict(
                     size=15,
                     color=paper_colors,
-                    opacity=paper_opacities,
                     symbol='diamond',
                     line=dict(color='white', width=2)
                 ),
