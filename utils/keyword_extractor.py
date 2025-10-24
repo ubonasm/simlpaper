@@ -14,7 +14,7 @@ STOP_WORDS = set([
     'its', 'we', 'our', 'you', 'your', 'they', 'their', 'i', 'my', 'me'
 ])
 
-def extract_keywords(text: str, top_n: int = 20) -> List[Tuple[str, float]]:
+def extract_keywords(text: str, top_n: int = 30) -> List[Tuple[str, float]]:
     """
     テキストからキーワードを抽出（TF-IDFベース）
     
