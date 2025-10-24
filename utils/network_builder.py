@@ -18,18 +18,20 @@ def build_network_data(papers: List[Dict]) -> Dict:
     
     n_papers = len(papers)
     
-    phi_papers = np.linspace(0, np.pi, int(np.sqrt(n_papers)) + 1)
-    theta_papers = np.linspace(0, 2 * np.pi, int(np.sqrt(n_papers)) + 1)
-    
     paper_positions = {}
-    radius_outer = 3.0  # 外側の球の半径
+    radius_outer = 3.0
+    
+    golden_angle = np.pi * (3.0 - np.sqrt(5.0))  # ゴールデンアングル
     
     for i in range(n_papers):
-        phi = phi_papers[i % len(phi_papers)]
-        theta = theta_papers[i % len(theta_papers)]
-        x = radius_outer * np.sin(phi) * np.cos(theta)
-        y = radius_outer * np.sin(phi) * np.sin(theta)
-        z = radius_outer * np.cos(phi)
+        y = 1 - (i / float(n_papers - 1 if n_papers > 1 else 1)) * 2
+        radius = np.sqrt(1 - y * y)
+        theta = golden_angle * i
+        
+        x = radius_outer * np.cos(theta) * radius
+        z = radius_outer * np.sin(theta) * radius
+        y = radius_outer * y
+        
         paper_positions[i] = (x, y, z)
     
     # 全論文からキーワードを収集
@@ -37,30 +39,40 @@ def build_network_data(papers: List[Dict]) -> Dict:
     for paper in papers:
         if 'keywords' in paper and paper['keywords']:
             for keyword, score in paper['keywords'][:20]:
-                all_keywords[keyword] += score
+                if isinstance(keyword, str) and isinstance(score, (int, float)):
+                    all_keywords[keyword] += score
     
     if not all_keywords:
+        print("[v0] No keywords found in papers")
         return _empty_network_data()
     
     top_keywords = [kw for kw, _ in all_keywords.most_common(25)]
     
-    phi_keywords = np.linspace(0, np.pi, int(np.sqrt(len(top_keywords))) + 1)
-    theta_keywords = np.linspace(0, 2 * np.pi, int(np.sqrt(len(top_keywords))) + 1)
+    if not top_keywords:
+        print("[v0] No top keywords found")
+        return _empty_network_data()
     
     keyword_positions = {}
-    radius_inner = 1.5  # 内側の球の半径
+    radius_inner = 1.5
+    n_keywords = len(top_keywords)
     
     for i, kw in enumerate(top_keywords):
-        phi = phi_keywords[i % len(phi_keywords)]
-        theta = theta_keywords[i % len(theta_keywords)]
-        x = radius_inner * np.sin(phi) * np.cos(theta)
-        y = radius_inner * np.sin(phi) * np.sin(theta)
-        z = radius_inner * np.cos(phi)
+        y = 1 - (i / float(n_keywords - 1 if n_keywords > 1 else 1)) * 2
+        radius = np.sqrt(1 - y * y)
+        theta = golden_angle * i
+        
+        x = radius_inner * np.cos(theta) * radius
+        z = radius_inner * np.sin(theta) * radius
+        y = radius_inner * y
+        
         keyword_positions[kw] = (x, y, z)
     
     # 類似度行列を計算
     try:
         similarity_matrix = calculate_similarity(papers)
+        if np.any(np.isnan(similarity_matrix)) or np.any(np.isinf(similarity_matrix)):
+            print("[v0] Warning: similarity matrix contains NaN or Inf values")
+            similarity_matrix = np.eye(n_papers)
     except Exception as e:
         print(f"[v0] Error calculating similarity: {e}")
         similarity_matrix = np.eye(n_papers)
@@ -70,13 +82,17 @@ def build_network_data(papers: List[Dict]) -> Dict:
     # 論文間のエッジ（類似度が高い場合のみ）
     for i in range(n_papers):
         for j in range(i + 1, n_papers):
-            similarity = similarity_matrix[i][j]
-            if similarity > 0.3:  # 閾値
-                x0, y0, z0 = paper_positions[i]
-                x1, y1, z1 = paper_positions[j]
-                edge_x.extend([x0, x1, None])
-                edge_y.extend([y0, y1, None])
-                edge_z.extend([z0, z1, None])
+            try:
+                similarity = float(similarity_matrix[i][j])
+                if not np.isnan(similarity) and not np.isinf(similarity) and similarity > 0.3:
+                    x0, y0, z0 = paper_positions[i]
+                    x1, y1, z1 = paper_positions[j]
+                    edge_x.extend([x0, x1, None])
+                    edge_y.extend([y0, y1, None])
+                    edge_z.extend([z0, z1, None])
+            except (IndexError, ValueError, TypeError) as e:
+                print(f"[v0] Error processing edge {i}-{j}: {e}")
+                continue
     
     # 論文とキーワード間のエッジ用の別データ
     keyword_edge_x, keyword_edge_y, keyword_edge_z = [], [], []
@@ -90,12 +106,16 @@ def build_network_data(papers: List[Dict]) -> Dict:
         
         for keyword in top_keywords:
             if keyword in paper_keywords:
-                score = paper_keywords[keyword]
-                if score > 0.3:  # 閾値を追加
-                    x1, y1, z1 = keyword_positions[keyword]
-                    keyword_edge_x.extend([x0, x1, None])
-                    keyword_edge_y.extend([y0, y1, None])
-                    keyword_edge_z.extend([z0, z1, None])
+                try:
+                    score = float(paper_keywords[keyword])
+                    if not np.isnan(score) and not np.isinf(score) and score > 0.3:
+                        x1, y1, z1 = keyword_positions[keyword]
+                        keyword_edge_x.extend([x0, x1, None])
+                        keyword_edge_y.extend([y0, y1, None])
+                        keyword_edge_z.extend([z0, z1, None])
+                except (ValueError, TypeError) as e:
+                    print(f"[v0] Error processing keyword edge: {e}")
+                    continue
     
     # ノードデータの構築
     paper_x = [pos[0] for pos in paper_positions.values()]
@@ -165,17 +185,17 @@ def build_paper_detail_network(paper: Dict) -> Dict:
             'node_sizes': [], 'node_colors': [], 'node_labels': [], 'node_hover': []
         }
     
-    # キーワードを球面上に配置
-    phi = np.linspace(0, np.pi, int(np.sqrt(n_keywords)) + 1)
-    theta = np.linspace(0, 2 * np.pi, int(np.sqrt(n_keywords)) + 1)
-    
     positions = []
+    golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+    
     for i in range(n_keywords):
-        p = phi[i % len(phi)]
-        t = theta[i % len(theta)]
-        x = np.sin(p) * np.cos(t)
-        y = np.sin(p) * np.sin(t)
-        z = np.cos(p)
+        y = 1 - (i / float(n_keywords - 1 if n_keywords > 1 else 1)) * 2
+        radius = np.sqrt(1 - y * y)
+        theta = golden_angle * i
+        
+        x = np.cos(theta) * radius
+        z = np.sin(theta) * radius
+        
         positions.append((x, y, z))
     
     # エッジデータ（近いキーワード同士を接続）
