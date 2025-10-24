@@ -463,9 +463,18 @@ else:
             filtered_df = df[df['類似度'] >= min_sim_filter]
             
             st.dataframe(
-                filtered_df.style.background_gradient(subset=['類似度'], cmap='RdYlGn', vmin=0, vmax=1),
+                filtered_df,
                 use_container_width=True,
-                height=400
+                height=400,
+                column_config={
+                    "類似度": st.column_config.ProgressColumn(
+                        "類似度",
+                        help="論文間の類似度スコア",
+                        format="%.3f",
+                        min_value=0,
+                        max_value=1,
+                    ),
+                }
             )
             
             csv = filtered_df.to_csv(index=False, encoding='utf-8-sig')
