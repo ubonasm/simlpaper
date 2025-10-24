@@ -5,7 +5,7 @@ from utils.keyword_extractor import calculate_similarity
 
 def build_network_data(papers: List[Dict]) -> Dict:
     """
-    全体ネットワークのデータを構築
+    全体ネットワークのデータを構築（球体レイアウト）
     
     Args:
         papers: 論文データのリスト
@@ -18,38 +18,45 @@ def build_network_data(papers: List[Dict]) -> Dict:
     
     n_papers = len(papers)
     
-    # 論文の位置を円形に配置
-    angles = np.linspace(0, 2 * np.pi, n_papers, endpoint=False)
-    radius = 2.0
-    paper_positions = {
-        i: (radius * np.cos(angle), radius * np.sin(angle), 0)
-        for i, angle in enumerate(angles)
-    }
+    phi_papers = np.linspace(0, np.pi, int(np.sqrt(n_papers)) + 1)
+    theta_papers = np.linspace(0, 2 * np.pi, int(np.sqrt(n_papers)) + 1)
+    
+    paper_positions = {}
+    radius_outer = 3.0  # 外側の球の半径
+    
+    for i in range(n_papers):
+        phi = phi_papers[i % len(phi_papers)]
+        theta = theta_papers[i % len(theta_papers)]
+        x = radius_outer * np.sin(phi) * np.cos(theta)
+        y = radius_outer * np.sin(phi) * np.sin(theta)
+        z = radius_outer * np.cos(phi)
+        paper_positions[i] = (x, y, z)
     
     # 全論文からキーワードを収集
     all_keywords = Counter()
     for paper in papers:
         if 'keywords' in paper and paper['keywords']:
-            for keyword, score in paper['keywords'][:10]:
+            for keyword, score in paper['keywords'][:20]:
                 all_keywords[keyword] += score
     
     if not all_keywords:
         return _empty_network_data()
     
-    # 上位キーワードを選択
-    top_keywords = [kw for kw, _ in all_keywords.most_common(15)]
+    top_keywords = [kw for kw, _ in all_keywords.most_common(25)]
     
-    # キーワードの位置を内側の円に配置
-    keyword_angles = np.linspace(0, 2 * np.pi, len(top_keywords), endpoint=False)
-    keyword_radius = 1.0
-    keyword_positions = {
-        kw: (
-            keyword_radius * np.cos(angle),
-            keyword_radius * np.sin(angle),
-            0.5
-        )
-        for kw, angle in zip(top_keywords, keyword_angles)
-    }
+    phi_keywords = np.linspace(0, np.pi, int(np.sqrt(len(top_keywords))) + 1)
+    theta_keywords = np.linspace(0, 2 * np.pi, int(np.sqrt(len(top_keywords))) + 1)
+    
+    keyword_positions = {}
+    radius_inner = 1.5  # 内側の球の半径
+    
+    for i, kw in enumerate(top_keywords):
+        phi = phi_keywords[i % len(phi_keywords)]
+        theta = theta_keywords[i % len(theta_keywords)]
+        x = radius_inner * np.sin(phi) * np.cos(theta)
+        y = radius_inner * np.sin(phi) * np.sin(theta)
+        z = radius_inner * np.cos(phi)
+        keyword_positions[kw] = (x, y, z)
     
     # 類似度行列を計算
     try:
@@ -78,7 +85,7 @@ def build_network_data(papers: List[Dict]) -> Dict:
         if 'keywords' not in paper or not paper['keywords']:
             continue
             
-        paper_keywords = dict(paper['keywords'][:10])
+        paper_keywords = dict(paper['keywords'][:20])
         x0, y0, z0 = paper_positions[i]
         
         for keyword in top_keywords:
@@ -148,7 +155,7 @@ def build_paper_detail_network(paper: Dict) -> Dict:
     Returns:
         3D可視化用のデータ辞書
     """
-    keywords = paper.get('keywords', [])[:15]
+    keywords = paper.get('keywords', [])[:25]
     n_keywords = len(keywords)
     
     if n_keywords == 0:
