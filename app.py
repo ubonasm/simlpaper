@@ -12,6 +12,8 @@ if 'papers' not in st.session_state:
     st.session_state.papers = []
 if 'selected_paper' not in st.session_state:
     st.session_state.selected_paper = None
+if 'selected_paper_ids' not in st.session_state:
+    st.session_state.selected_paper_ids = []
 
 st.title("📚 論文ネットワーク解析システム")
 st.markdown("最大10個の論文をアップロードして、3Dネットワーク図で類似度を可視化します")
@@ -42,6 +44,7 @@ with st.sidebar:
                     'text': text,
                     'keywords': keywords
                 })
+            st.session_state.selected_paper_ids = [p['id'] for p in st.session_state.papers]
             st.success(f"✅ {len(uploaded_files)}個の論文を解析しました")
     
     if st.session_state.papers:
@@ -60,8 +63,38 @@ else:
     with tab1:
         st.subheader("論文とキーワードの3Dネットワーク")
         
+        st.markdown("#### 表示する論文を選択")
+        cols = st.columns(min(5, len(st.session_state.papers)))
+        for idx, paper in enumerate(st.session_state.papers):
+            with cols[idx % len(cols)]:
+                is_selected = st.checkbox(
+                    f"P{idx+1}",
+                    value=paper['id'] in st.session_state.selected_paper_ids,
+                    key=f"paper_select_{idx}",
+                    help=paper['name']
+                )
+                if is_selected and paper['id'] not in st.session_state.selected_paper_ids:
+                    st.session_state.selected_paper_ids.append(paper['id'])
+                elif not is_selected and paper['id'] in st.session_state.selected_paper_ids:
+                    st.session_state.selected_paper_ids.remove(paper['id'])
+        
+        st.divider()
+        
         # ネットワークデータの構築
         network_data = build_network_data(st.session_state.papers)
+        
+        selected_ids = set(st.session_state.selected_paper_ids)
+        
+        # 論文ノードの色と透明度を調整
+        paper_colors = []
+        paper_opacities = []
+        for paper_id in network_data['paper_ids']:
+            if paper_id in selected_ids:
+                paper_colors.append('#3b82f6')
+                paper_opacities.append(1.0)
+            else:
+                paper_colors.append('#94a3b8')
+                paper_opacities.append(0.2)
         
         # 3D可視化
         fig = go.Figure(data=[
@@ -101,7 +134,8 @@ else:
                 mode='markers+text',
                 marker=dict(
                     size=15,
-                    color='#3b82f6',
+                    color=paper_colors,
+                    opacity=paper_opacities,
                     symbol='diamond',
                     line=dict(color='white', width=2)
                 ),
@@ -134,14 +168,20 @@ else:
         
         fig.update_layout(
             scene=dict(
-                xaxis=dict(showbackground=False, showticklabels=False, title=''),
-                yaxis=dict(showbackground=False, showticklabels=False, title=''),
-                zaxis=dict(showbackground=False, showticklabels=False, title=''),
+                xaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False),
+                yaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False),
+                zaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False),
+                bgcolor='rgba(240, 240, 250, 0.9)',
+                camera=dict(
+                    eye=dict(x=1.5, y=1.5, z=1.5)
+                )
             ),
             showlegend=True,
             height=700,
             margin=dict(l=0, r=0, t=0, b=0),
-            hovermode='closest'
+            hovermode='closest',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
         )
         
         # グラフをクリック可能にする
@@ -206,12 +246,18 @@ else:
             
             fig_detail.update_layout(
                 scene=dict(
-                    xaxis=dict(showbackground=False, showticklabels=False, title=''),
-                    yaxis=dict(showbackground=False, showticklabels=False, title=''),
-                    zaxis=dict(showbackground=False, showticklabels=False, title=''),
+                    xaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False),
+                    yaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False),
+                    zaxis=dict(showbackground=False, showticklabels=False, title='', showgrid=False, zeroline=False),
+                    bgcolor='rgba(240, 240, 250, 0.9)',
+                    camera=dict(
+                        eye=dict(x=1.5, y=1.5, z=1.5)
+                    )
                 ),
                 height=600,
-                margin=dict(l=0, r=0, t=0, b=0)
+                margin=dict(l=0, r=0, t=0, b=0),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)'
             )
             
             st.plotly_chart(fig_detail, use_container_width=True)
