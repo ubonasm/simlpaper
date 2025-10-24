@@ -144,29 +144,29 @@ else:
         
         # 3D可視化
         fig = go.Figure(data=[
-            # 論文間のエッジ（青色）
+            # 論文間のエッジ（オレンジ色）
             go.Scatter3d(
                 x=network_data['edge_x'],
                 y=network_data['edge_y'],
                 z=network_data['edge_z'],
                 mode='lines',
                 line=dict(
-                    color='rgba(59, 130, 246, 0.4)',
-                    width=2
+                    color='rgba(255, 140, 0, 0.6)',
+                    width=3
                 ),
                 hoverinfo='none',
                 showlegend=False,
                 name='論文間の類似'
             ),
-            # キーワードエッジ（緑色）
+            # キーワードエッジ（赤色）
             go.Scatter3d(
                 x=network_data['keyword_edge_x'],
                 y=network_data['keyword_edge_y'],
                 z=network_data['keyword_edge_z'],
                 mode='lines',
                 line=dict(
-                    color='rgba(16, 185, 129, 0.3)',
-                    width=1
+                    color='rgba(255, 69, 0, 0.5)',
+                    width=2
                 ),
                 hoverinfo='none',
                 showlegend=False,
