@@ -1,9 +1,10 @@
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
+import json
 from utils.pdf_processor import extract_text_from_pdf
 from utils.keyword_extractor import extract_keywords, calculate_similarity
-from utils.network_builder import build_network_data, build_paper_detail_network
+from utils.network_builder import build_network_data, build_paper_detail_network, filter_network_data
 
 st.set_page_config(page_title="論文ネットワーク解析", layout="wide", page_icon="📚")
 
@@ -14,6 +15,10 @@ if 'selected_paper' not in st.session_state:
     st.session_state.selected_paper = None
 if 'selected_paper_ids' not in st.session_state:
     st.session_state.selected_paper_ids = []
+if 'similarity_matrix' not in st.session_state:
+    st.session_state.similarity_matrix = None
+if 'network_data' not in st.session_state:
+    st.session_state.network_data = None
 
 st.title("📚 論文ネットワーク解析システム")
 st.markdown("最大10個の論文をアップロードして、3Dネットワーク図で類似度を可視化します")
@@ -45,6 +50,8 @@ with st.sidebar:
                     'keywords': keywords
                 })
             st.session_state.selected_paper_ids = [p['id'] for p in st.session_state.papers]
+            st.session_state.similarity_matrix = calculate_similarity(st.session_state.papers)
+            st.session_state.network_data = build_network_data(st.session_state.papers)
             st.success(f"✅ {len(uploaded_files)}個の論文を解析しました")
     
     if st.session_state.papers:
@@ -57,31 +64,56 @@ with st.sidebar:
 if not st.session_state.papers:
     st.info("👈 左側のサイドバーから論文をアップロードして解析を開始してください")
 else:
-    # タブで表示を切り替え
-    tab1, tab2 = st.tabs(["🌐 全体ネットワーク", "🔍 論文詳細"])
+    tab1, tab2, tab3 = st.tabs(["🌐 全体ネットワーク", "🔍 論文詳細", "📊 類似度分析"])
     
     with tab1:
         st.subheader("論文とキーワードの3Dネットワーク")
         
-        st.markdown("#### 表示する論文を選択")
-        cols = st.columns(min(5, len(st.session_state.papers)))
-        for idx, paper in enumerate(st.session_state.papers):
-            with cols[idx % len(cols)]:
-                is_selected = st.checkbox(
-                    f"P{idx+1}",
-                    value=paper['id'] in st.session_state.selected_paper_ids,
-                    key=f"paper_select_{idx}",
-                    help=paper['name']
-                )
-                if is_selected and paper['id'] not in st.session_state.selected_paper_ids:
-                    st.session_state.selected_paper_ids.append(paper['id'])
-                elif not is_selected and paper['id'] in st.session_state.selected_paper_ids:
-                    st.session_state.selected_paper_ids.remove(paper['id'])
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.markdown("#### 表示する論文を選択")
+            cols = st.columns(min(5, len(st.session_state.papers)))
+            for idx, paper in enumerate(st.session_state.papers):
+                with cols[idx % len(cols)]:
+                    is_selected = st.checkbox(
+                        f"P{idx+1}",
+                        value=paper['id'] in st.session_state.selected_paper_ids,
+                        key=f"paper_select_{idx}",
+                        help=paper['name']
+                    )
+                    if is_selected and paper['id'] not in st.session_state.selected_paper_ids:
+                        st.session_state.selected_paper_ids.append(paper['id'])
+                    elif not is_selected and paper['id'] in st.session_state.selected_paper_ids:
+                        st.session_state.selected_paper_ids.remove(paper['id'])
+        
+        with col2:
+            st.markdown("#### フィルタリング")
+            min_similarity = st.slider(
+                "最小類似度",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.3,
+                step=0.05,
+                help="この値より低い類似度のエッジは表示されません"
+            )
+            
+            max_keywords = st.slider(
+                "表示キーワード数",
+                min_value=5,
+                max_value=30,
+                value=25,
+                step=5,
+                help="表示する最大キーワード数"
+            )
         
         st.divider()
         
-        # ネットワークデータの構築
-        network_data = build_network_data(st.session_state.papers)
+        network_data = filter_network_data(
+            st.session_state.network_data,
+            st.session_state.papers,
+            min_similarity=min_similarity,
+            max_keywords=max_keywords
+        )
         
         selected_ids = set(st.session_state.selected_paper_ids)
         
@@ -89,9 +121,26 @@ else:
         paper_colors = []
         for paper_id in network_data['paper_ids']:
             if paper_id in selected_ids:
-                paper_colors.append('rgba(59, 130, 246, 1.0)')  # 選択された論文：青色、不透明
+                paper_colors.append('rgba(59, 130, 246, 1.0)')
             else:
-                paper_colors.append('rgba(148, 163, 184, 0.2)')  # 選択されていない論文：グレー、半透明
+                paper_colors.append('rgba(148, 163, 184, 0.2)')
+        
+        if network_data['keyword_labels']:
+            with st.expander("🔍 キーワードでフィルタリング（オプション）"):
+                selected_keywords = st.multiselect(
+                    "表示するキーワードを選択（空の場合は全て表示）",
+                    options=network_data['keyword_labels'],
+                    default=[],
+                    help="特定のキーワードのみを表示したい場合に選択してください"
+                )
+                
+                if selected_keywords:
+                    keyword_indices = [i for i, kw in enumerate(network_data['keyword_labels']) if kw in selected_keywords]
+                    network_data['keyword_x'] = [network_data['keyword_x'][i] for i in keyword_indices]
+                    network_data['keyword_y'] = [network_data['keyword_y'][i] for i in keyword_indices]
+                    network_data['keyword_z'] = [network_data['keyword_z'][i] for i in keyword_indices]
+                    network_data['keyword_labels'] = [network_data['keyword_labels'][i] for i in keyword_indices]
+                    network_data['keyword_hover'] = [network_data['keyword_hover'][i] for i in keyword_indices]
         
         # 3D可視化
         fig = go.Figure(data=[
@@ -180,11 +229,66 @@ else:
             plot_bgcolor='rgba(0,0,0,0)'
         )
         
-        # グラフをクリック可能にする
-        selected_points = st.plotly_chart(fig, use_container_width=True, key="main_network")
+        st.plotly_chart(fig, use_container_width=True, key="main_network")
+        
+        st.divider()
+        st.markdown("### 📥 エクスポート")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            html_str = fig.to_html(include_plotlyjs='cdn')
+            st.download_button(
+                label="📄 HTMLとしてダウンロード",
+                data=html_str,
+                file_name="network_visualization.html",
+                mime="text/html",
+                help="インタラクティブな3D可視化をHTMLファイルとして保存"
+            )
+        
+        with col2:
+            try:
+                img_bytes = fig.to_image(format="png", width=1200, height=800)
+                st.download_button(
+                    label="🖼️ PNGとしてダウンロード",
+                    data=img_bytes,
+                    file_name="network_visualization.png",
+                    mime="image/png",
+                    help="静的画像として保存"
+                )
+            except:
+                st.info("PNG出力には追加のライブラリが必要です")
+        
+        with col3:
+            export_data = {
+                'papers': [{'id': p['id'], 'name': p['name'], 'keywords': p['keywords'][:10]} for p in st.session_state.papers],
+                'network_data': {
+                    'nodes': {
+                        'papers': [{'id': i, 'label': label, 'position': [x, y, z]} 
+                                  for i, label, x, y, z in zip(network_data['paper_ids'], 
+                                                                network_data['paper_labels'],
+                                                                network_data['paper_x'],
+                                                                network_data['paper_y'],
+                                                                network_data['paper_z'])],
+                        'keywords': [{'label': label, 'position': [x, y, z]} 
+                                    for label, x, y, z in zip(network_data['keyword_labels'],
+                                                              network_data['keyword_x'],
+                                                              network_data['keyword_y'],
+                                                              network_data['keyword_z'])]
+                    }
+                }
+            }
+            json_str = json.dumps(export_data, ensure_ascii=False, indent=2)
+            st.download_button(
+                label="📊 JSONとしてダウンロード",
+                data=json_str,
+                file_name="network_data.json",
+                mime="application/json",
+                help="ネットワークデータをJSON形式で保存"
+            )
+        
+        st.divider()
         
         # 論文選択UI
-        st.divider()
         col1, col2 = st.columns([3, 1])
         with col1:
             selected_paper_name = st.selectbox(
@@ -270,3 +374,106 @@ else:
                 st.rerun()
         else:
             st.info("左の「全体ネットワーク」タブから論文を選択してください")
+    
+    with tab3:
+        st.subheader("📊 論文間の類似度分析")
+        
+        if st.session_state.similarity_matrix is not None:
+            similarity_matrix = st.session_state.similarity_matrix
+            n_papers = len(st.session_state.papers)
+            
+            st.markdown("### 📈 統計情報")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            # 上三角行列の値のみを取得（対角線を除く）
+            upper_triangle = []
+            for i in range(n_papers):
+                for j in range(i + 1, n_papers):
+                    upper_triangle.append(similarity_matrix[i][j])
+            
+            if upper_triangle:
+                with col1:
+                    st.metric("平均類似度", f"{np.mean(upper_triangle):.3f}")
+                with col2:
+                    st.metric("最大類似度", f"{np.max(upper_triangle):.3f}")
+                with col3:
+                    st.metric("最小類似度", f"{np.min(upper_triangle):.3f}")
+                with col4:
+                    st.metric("標準偏差", f"{np.std(upper_triangle):.3f}")
+            
+            st.divider()
+            
+            st.markdown("### 🔥 類似度ヒートマップ")
+            
+            paper_names = [f"P{i+1}" for i in range(n_papers)]
+            
+            fig_heatmap = go.Figure(data=go.Heatmap(
+                z=similarity_matrix,
+                x=paper_names,
+                y=paper_names,
+                colorscale='RdYlGn',
+                text=np.round(similarity_matrix, 3),
+                texttemplate='%{text}',
+                textfont={"size": 10},
+                colorbar=dict(title="類似度"),
+                hoverongaps=False,
+                hovertemplate='%{y} と %{x}<br>類似度: %{z:.3f}<extra></extra>'
+            ))
+            
+            fig_heatmap.update_layout(
+                title="論文間の類似度マトリックス",
+                xaxis_title="論文",
+                yaxis_title="論文",
+                height=600,
+                width=700
+            )
+            
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+            
+            st.divider()
+            
+            st.markdown("### 📋 論文ペアの詳細類似度")
+            
+            # 類似度の高い順にソート
+            paper_pairs = []
+            for i in range(n_papers):
+                for j in range(i + 1, n_papers):
+                    paper_pairs.append({
+                        '論文1': st.session_state.papers[i]['name'],
+                        '論文2': st.session_state.papers[j]['name'],
+                        '類似度': similarity_matrix[i][j]
+                    })
+            
+            paper_pairs.sort(key=lambda x: x['類似度'], reverse=True)
+            
+            # データフレームとして表示
+            import pandas as pd
+            df = pd.DataFrame(paper_pairs)
+            
+            # 類似度でフィルタリング
+            min_sim_filter = st.slider(
+                "表示する最小類似度",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.0,
+                step=0.05,
+                key="similarity_filter"
+            )
+            
+            filtered_df = df[df['類似度'] >= min_sim_filter]
+            
+            st.dataframe(
+                filtered_df.style.background_gradient(subset=['類似度'], cmap='RdYlGn', vmin=0, vmax=1),
+                use_container_width=True,
+                height=400
+            )
+            
+            csv = filtered_df.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="📥 類似度データをCSVでダウンロード",
+                data=csv,
+                file_name="similarity_analysis.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("論文を解析すると、類似度分析が表示されます")
