@@ -46,7 +46,7 @@ def build_network_data(papers: List[Dict]) -> Dict:
         print("[v0] No keywords found in papers")
         return _empty_network_data()
     
-    top_keywords = [kw for kw, _ in all_keywords.most_common(30)]
+    top_keywords = [kw for kw, _ in all_keywords.most_common(25)]
     
     if not top_keywords:
         print("[v0] No top keywords found")
@@ -151,91 +151,8 @@ def build_network_data(papers: List[Dict]) -> Dict:
         'keyword_y': keyword_y,
         'keyword_z': keyword_z,
         'keyword_labels': keyword_labels,
-        'keyword_hover': keyword_hover,
-        'all_keywords': all_keywords,
-        'paper_positions': paper_positions,
-        'keyword_positions': keyword_positions,
-        'similarity_matrix': similarity_matrix
+        'keyword_hover': keyword_hover
     }
-
-def filter_network_data(network_data: Dict, papers: List[Dict], min_similarity: float = 0.3, max_keywords: int = 25) -> Dict:
-    """
-    ネットワークデータをフィルタリング
-    
-    Args:
-        network_data: 元のネットワークデータ
-        papers: 論文データのリスト
-        min_similarity: 最小類似度閾値
-        max_keywords: 表示する最大キーワード数
-        
-    Returns:
-        フィルタリングされたネットワークデータ
-    """
-    if not network_data or 'similarity_matrix' not in network_data:
-        return network_data
-    
-    filtered_data = network_data.copy()
-    
-    # キーワード数でフィルタリング
-    if max_keywords < len(network_data['keyword_labels']):
-        filtered_data['keyword_x'] = network_data['keyword_x'][:max_keywords]
-        filtered_data['keyword_y'] = network_data['keyword_y'][:max_keywords]
-        filtered_data['keyword_z'] = network_data['keyword_z'][:max_keywords]
-        filtered_data['keyword_labels'] = network_data['keyword_labels'][:max_keywords]
-        filtered_data['keyword_hover'] = network_data['keyword_hover'][:max_keywords]
-    
-    # 類似度でエッジをフィルタリング
-    similarity_matrix = network_data['similarity_matrix']
-    paper_positions = network_data['paper_positions']
-    n_papers = len(papers)
-    
-    edge_x, edge_y, edge_z = [], [], []
-    for i in range(n_papers):
-        for j in range(i + 1, n_papers):
-            try:
-                similarity = float(similarity_matrix[i][j])
-                if not np.isnan(similarity) and not np.isinf(similarity) and similarity > min_similarity:
-                    x0, y0, z0 = paper_positions[i]
-                    x1, y1, z1 = paper_positions[j]
-                    edge_x.extend([x0, x1, None])
-                    edge_y.extend([y0, y1, None])
-                    edge_z.extend([z0, z1, None])
-            except (IndexError, ValueError, TypeError):
-                continue
-    
-    filtered_data['edge_x'] = edge_x
-    filtered_data['edge_y'] = edge_y
-    filtered_data['edge_z'] = edge_z
-    
-    # キーワードエッジもフィルタリング
-    keyword_edge_x, keyword_edge_y, keyword_edge_z = [], [], []
-    keyword_positions = network_data['keyword_positions']
-    top_keywords = filtered_data['keyword_labels']
-    
-    for i, paper in enumerate(papers):
-        if 'keywords' not in paper or not paper['keywords']:
-            continue
-            
-        paper_keywords = dict(paper['keywords'][:20])
-        x0, y0, z0 = paper_positions[i]
-        
-        for keyword in top_keywords:
-            if keyword in paper_keywords and keyword in keyword_positions:
-                try:
-                    score = float(paper_keywords[keyword])
-                    if not np.isnan(score) and not np.isinf(score) and score > min_similarity:
-                        x1, y1, z1 = keyword_positions[keyword]
-                        keyword_edge_x.extend([x0, x1, None])
-                        keyword_edge_y.extend([y0, y1, None])
-                        keyword_edge_z.extend([z0, z1, None])
-                except (ValueError, TypeError):
-                    continue
-    
-    filtered_data['keyword_edge_x'] = keyword_edge_x
-    filtered_data['keyword_edge_y'] = keyword_edge_y
-    filtered_data['keyword_edge_z'] = keyword_edge_z
-    
-    return filtered_data
 
 def _empty_network_data() -> Dict:
     """空のネットワークデータを返す"""
@@ -245,11 +162,7 @@ def _empty_network_data() -> Dict:
         'paper_x': [], 'paper_y': [], 'paper_z': [],
         'paper_labels': [], 'paper_hover': [], 'paper_ids': [],
         'keyword_x': [], 'keyword_y': [], 'keyword_z': [],
-        'keyword_labels': [], 'keyword_hover': [],
-        'all_keywords': Counter(),
-        'paper_positions': {},
-        'keyword_positions': {},
-        'similarity_matrix': np.array([])
+        'keyword_labels': [], 'keyword_hover': []
     }
 
 def build_paper_detail_network(paper: Dict) -> Dict:
